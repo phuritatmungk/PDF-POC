@@ -292,7 +292,7 @@ def _find_address_section(pages) -> str:
         if _BRANCH_LINE.search(t) and not _WATERMARK.match(t):
             branch_lines.append(t)
 
-    return "\n".join(main_lines + branch_lines)
+    return "\n".join(main_lines + branch_lines)[:1500]
 
 
 def _find_directors_section(pages) -> str:
@@ -400,6 +400,7 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
         raise RuntimeError(f"HTTP {e.code} from LLM server: {err_body[:300]}")
 
     raw = body["choices"][0]["message"]["content"].strip()
+    print(f"[extractor] raw response ({len(raw)}c): {raw[:200]!r}")
     # Strip Qwen3/thinking-model <think>...</think> blocks
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
     # Strip accidental markdown fences
