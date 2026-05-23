@@ -1,0 +1,57 @@
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# --- Logs ---
+*.log
+install.log
+
+# --- Secrets / Env ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python (backend) ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Next.js (frontend) ---
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+next-env.d.ts
+*.tsbuildinfo
+
+# --- OCR sample data (excluded from repo) ---
+*.ocr.json
+*.ocr (*).json
+2343_6250*.json
+
+# --- Uploaded files ---
+backend/uploads/
+uploads/
+
+# --- Docling model cache (downloaded at runtime, 500MB+) ---
+backend/.docling_models/
+.docling_models/
+*.safetensors
+
+# --- Local Claude / tooling ---
+.claude/settings.local.json
