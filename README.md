@@ -117,7 +117,7 @@ Field schema:
 ```
 
 `page`/`idx` are null for LLM-extracted multi-line fields (Locate button hidden).
-
+ 
 ## Deploy
 
 **Frontend → Vercel:** import repo, set root directory = `frontend`, add `NEXT_PUBLIC_API_BASE` env var pointing to your backend tunnel URL.
