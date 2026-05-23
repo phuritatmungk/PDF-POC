@@ -1,14 +1,17 @@
+import json
 import os
 import uuid
 from pathlib import Path
 
 import numpy as np
+import pypdfium2 as pdfium
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from paddleocr import PaddleOCR
 
 from extractor import extract_fields
@@ -94,6 +97,55 @@ def run_ocr(img):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+def _page_count(pdf_path: Path) -> int:
+    doc = pdfium.PdfDocument(str(pdf_path))
+    n = len(doc)
+    doc.close()
+    return n
+
+
+def _sse(data: dict) -> str:
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.post("/ocr-stream")
+async def ocr_stream(file: UploadFile = File(...)):
+    filename = file.filename or "upload.pdf"
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+
+    pdf_bytes = await file.read()
+    saved_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{filename}"
+    saved_path.write_bytes(pdf_bytes)
+
+    def generate():
+        try:
+            total = _page_count(saved_path)
+            pages = []
+            for page_num, img in render_pdf_pages(saved_path):
+                detections = run_ocr(img)
+                pages.append(
+                    {
+                        "page": page_num,
+                        "width": img.width,
+                        "height": img.height,
+                        "detections": detections,
+                    }
+                )
+                yield _sse({"type": "progress", "page": page_num, "total": total})
+            yield _sse(
+                {"type": "done", "pages": pages, "fields": extract_fields(pages)}
+            )
+        finally:
+            saved_path.unlink(missing_ok=True)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/ocr")
