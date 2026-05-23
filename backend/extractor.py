@@ -425,9 +425,16 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
 
 def extract_fields(pages) -> dict[str, dict[str, Any]]:
     """Use local LLM if LLM_BASE_URL is set; otherwise fall back to heuristic."""
-    if os.environ.get("LLM_BASE_URL"):
+    llm_url = os.environ.get("LLM_BASE_URL", "").strip()
+    print(f"[extractor] LLM_BASE_URL={llm_url!r}")
+    if llm_url:
         try:
             return extract_fields_llm(pages)
         except Exception as exc:
-            print(f"[extractor] LLM extraction failed ({exc}), falling back to heuristic")
+            import traceback
+            print(f"[extractor] LLM extraction failed: {exc}")
+            traceback.print_exc()
+            print("[extractor] falling back to heuristic")
+    else:
+        print("[extractor] no LLM_BASE_URL, using heuristic")
     return extract_fields_heuristic(pages)
