@@ -370,7 +370,6 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
     directors = _find_directors_section(pages)
     agenda = _find_agenda_section(pages)
     print(f"[extractor] sections — general:{len(general)}c address:{len(address)}c directors:{len(directors)}c agenda:{len(agenda)}c")
-    print(f"[extractor] general[:300]: {general[:300]!r}")
 
     payload = json.dumps(
         {
@@ -382,7 +381,7 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
                 )},
             ],
             "temperature": 0,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "response_format": {"type": "json_object"},
         }
     ).encode()
@@ -401,7 +400,6 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
         raise RuntimeError(f"HTTP {e.code} from LLM server: {err_body[:300]}")
 
     raw = body["choices"][0]["message"]["content"].strip()
-    print(f"[extractor] raw response ({len(raw)}c): {raw[:200]!r}")
     # Strip Qwen3/thinking-model <think>...</think> blocks
     raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
     # Strip accidental markdown fences
