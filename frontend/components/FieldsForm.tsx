@@ -109,6 +109,7 @@ export default function FieldsForm({ fields, filename, onSelect }: Props) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {FIELD_LABELS.map(({ key, label, multiline }) => {
           const ext = fields[key];
+          if (!ext) return null;
           const canLocate = ext.page != null && ext.idx != null;
           const empty = !ext.value;
           return (
