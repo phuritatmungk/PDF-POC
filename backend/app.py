@@ -1,18 +1,15 @@
-import asyncio
 import json
 import os
 import uuid
 from pathlib import Path
 
 import numpy as np
-import pypdfium2 as pdfium
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 from paddleocr import PaddleOCR
 
 from extractor import extract_fields
@@ -20,14 +17,12 @@ from extractor import extract_fields
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Pre-download Docling models to a local dir (avoids huggingface_hub symlink issue on Windows).
 DOCLING_MODELS_DIR = Path(__file__).parent / ".docling_models"
 DOCLING_MODELS_DIR.mkdir(exist_ok=True)
 DOCLING_ARTIFACTS_PATH = StandardPdfPipeline.download_models_hf(
     local_dir=DOCLING_MODELS_DIR
 )
 
-# Docling images_scale: 1.0 ≈ 72 DPI. 2.0 ≈ 144 DPI.
 IMAGES_SCALE = 2.0
 
 app = FastAPI(title="PDF OCR POC")
@@ -42,8 +37,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# PaddleOCR 3.x with PP-OCRv5 Thai recognition.
-# Detection model is language-agnostic; recognition is Thai-specific.
 ocr_engine = PaddleOCR(
     text_detection_model_name="PP-OCRv5_mobile_det",
     text_recognition_model_name="th_PP-OCRv5_mobile_rec",
@@ -66,17 +59,11 @@ doc_converter = DocumentConverter(
 
 
 def render_pdf_pages(pdf_path: Path):
-    """Yield (1-based page_number, PIL.Image) page-by-page using pypdfium2."""
-    doc = pdfium.PdfDocument(str(pdf_path))
-    try:
-        for i in range(len(doc)):
-            page = doc[i]
-            bitmap = page.render(scale=IMAGES_SCALE)
-            img = bitmap.to_pil().convert("RGB")
-            page.close()
-            yield i + 1, img
-    finally:
-        doc.close()
+    """Yield (1-based page_number, PIL.Image) for every page using Docling."""
+    result = doc_converter.convert(str(pdf_path))
+    for page_no, page in sorted(result.document.pages.items()):
+        if page.image is not None:
+            yield page_no, page.image.pil_image.convert("RGB")
 
 
 def run_ocr(img):
@@ -106,56 +93,6 @@ def health():
     return {"status": "ok"}
 
 
-def _page_count(pdf_path: Path) -> int:
-    doc = pdfium.PdfDocument(str(pdf_path))
-    n = len(doc)
-    doc.close()
-    return n
-
-
-def _sse(data: dict) -> str:
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-@app.post("/ocr-stream")
-async def ocr_stream(file: UploadFile = File(...)):
-    filename = file.filename or "upload.pdf"
-    if not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="File must be a PDF")
-
-    pdf_bytes = await file.read()
-    saved_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{filename}"
-    saved_path.write_bytes(pdf_bytes)
-
-    async def generate():
-        try:
-            total = _page_count(saved_path)
-            pages = []
-            for page_num, img in render_pdf_pages(saved_path):
-                detections = run_ocr(img)
-                pages.append(
-                    {
-                        "page": page_num,
-                        "width": img.width,
-                        "height": img.height,
-                        "detections": detections,
-                    }
-                )
-                yield _sse({"type": "progress", "page": page_num, "total": total})
-                await asyncio.sleep(0)  # flush chunk to client before next page
-            yield _sse({"type": "extracting"})
-            fields = extract_fields(pages)
-            yield _sse({"type": "done", "pages": pages, "fields": fields})
-        finally:
-            saved_path.unlink(missing_ok=True)
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
 @app.post("/ocr")
 async def ocr(file: UploadFile = File(...)):
     filename = file.filename or "upload.pdf"
@@ -177,7 +114,6 @@ async def ocr(file: UploadFile = File(...)):
                     "detections": run_ocr(img),
                 }
             )
-
         return {"pages": pages, "fields": extract_fields(pages)}
     finally:
         saved_path.unlink(missing_ok=True)

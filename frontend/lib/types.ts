@@ -26,6 +26,8 @@ export type Fields = {
   report_date: FieldExtraction;
   business_type: FieldExtraction;
   directors: FieldExtraction;
+  topics: FieldExtraction;
+  descriptions: FieldExtraction;
 };
 
 export type OcrResponse = { pages: PageResult[]; fields: Fields };

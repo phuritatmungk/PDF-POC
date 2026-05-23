@@ -16,6 +16,8 @@ const EMPTY_FIELDS: Fields = {
   report_date:         { value: "", page: null, idx: null },
   business_type:       { value: "", page: null, idx: null },
   directors:           { value: "", page: null, idx: null },
+  topics:              { value: "", page: null, idx: null },
+  descriptions:        { value: "", page: null, idx: null },
 };
 
 export default function Home() {

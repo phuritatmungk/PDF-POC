@@ -108,6 +108,45 @@ def _find_id_near_label(pages, label_pattern):
     return dict(DEFAULT_FIELD)
 
 
+def _extract_agenda_heuristic(pages) -> tuple[dict, dict]:
+    """Return (topics_field, descriptions_field) by scanning for วาระที่ N lines."""
+    flat = list(_iter_detections(pages))
+    topics: list[str] = []
+    descriptions: list[str] = []
+    first_page: int | None = None
+    first_idx: int | None = None
+
+    i = 0
+    while i < len(flat):
+        page, idx, text = flat[i]
+        t = text.strip()
+        if _AGENDA_LINE.search(t):
+            if first_page is None:
+                first_page, first_idx = page, idx
+            topics.append(t)
+            # collect following lines as description until next วาระ or end marker
+            desc_parts: list[str] = []
+            j = i + 1
+            while j < len(flat):
+                _, _, ntext = flat[j]
+                nt = ntext.strip()
+                if not nt or _WATERMARK.match(nt):
+                    j += 1
+                    continue
+                if _AGENDA_LINE.search(nt) or _AGENDA_END.search(nt):
+                    break
+                desc_parts.append(nt)
+                j += 1
+            descriptions.append(" ".join(desc_parts))
+            i = j
+            continue
+        i += 1
+
+    topics_field: dict = {"value": "\n".join(topics), "page": first_page, "idx": first_idx}
+    descs_field: dict = {"value": "\n".join(descriptions), "page": first_page, "idx": first_idx}
+    return topics_field, descs_field
+
+
 def extract_fields_heuristic(pages) -> dict[str, dict[str, Any]]:
     company = _find_first(pages, COMPANY_TH)
     if not company["value"]:
@@ -125,6 +164,7 @@ def extract_fields_heuristic(pages) -> dict[str, dict[str, Any]]:
     date = _find_first(pages, DATE_TH)
     if not date["value"]:
         date = _find_first(pages, DATE_NUM)
+    topics, descriptions = _extract_agenda_heuristic(pages)
     return {
         "company_name": company,
         "registration_number": registration,
@@ -134,6 +174,8 @@ def extract_fields_heuristic(pages) -> dict[str, dict[str, Any]]:
         "report_date": date,
         "business_type": business,
         "directors": directors,
+        "topics": topics,
+        "descriptions": descriptions,
     }
 
 
@@ -149,6 +191,8 @@ _FIELD_KEYS = [
     "report_date",
     "business_type",
     "directors",
+    "topics",
+    "descriptions",
 ]
 
 _SYSTEM = (
@@ -158,7 +202,7 @@ _SYSTEM = (
     "Return ONLY valid JSON — no markdown, no explanation. /no_think"
 )
 
-_USER_TMPL = """Extract fields from a Thai company affidavit. Return ONLY valid JSON.
+_USER_TMPL = """Extract fields from a Thai company document. Return ONLY valid JSON.
 
 === GENERAL TEXT (company name, ID, capital, date, business type) ===
 {general}
@@ -169,6 +213,9 @@ _USER_TMPL = """Extract fields from a Thai company affidavit. Return ONLY valid 
 === DIRECTORS TEXT (extract director names from this only) ===
 {directors}
 
+=== AGENDA TEXT (extract meeting agenda topics and descriptions from this only) ===
+{agenda}
+
 RULES:
 - company_name: output ONCE, e.g. "บริษัท โออิชิ กรุ๊ป จำกัด (มหาชน)"
 - registration_number: 13-digit registration number
@@ -178,8 +225,10 @@ RULES:
 - report_date: document date
 - business_type: nature of business
 - directors: ALL names from the numbered list (1. 2. 3. ...) in DIRECTORS TEXT, one per line, no number prefix. Do NOT use signing-authority text.
+- topics: agenda item titles from AGENDA TEXT, one per line (e.g. "เรื่องรับรองรายงานการประชุม"). Empty string if no agenda found.
+- descriptions: corresponding description/resolution for each agenda item, one per line (same count as topics). Empty string if no agenda found.
 
-{{"company_name":"...","registration_number":"...","tax_id":"...","registered_capital":"...","address":"mainoffice\\nbranch1\\nbranch2","report_date":"...","business_type":"...","directors":"name1\\nname2\\nname3"}}"""
+{{"company_name":"...","registration_number":"...","tax_id":"...","registered_capital":"...","address":"mainoffice\\nbranch1\\nbranch2","report_date":"...","business_type":"...","directors":"name1\\nname2\\nname3","topics":"topic1\\ntopic2","descriptions":"desc1\\ndesc2"}}"""
 
 # Patterns for corpus filtering
 _WATERMARK = re.compile(
@@ -195,10 +244,14 @@ _ADDR_END = re.compile(r"วัตถุประสงค์|^\s*\d+\s*$")
 _DIR_START = re.compile(r"กรรมการของ\S*มี\s*\d+\s*คน|กรรมการของบริษัทมี")
 _DIR_END = re.compile(r"ชื่อและจำนวนกรรมการซึ่งมีอำนาจ|ข้อจำกัดอำนาจกรรมการ")
 
+_AGENDA_LINE = re.compile(r"วาระที่\s*\d+|Agenda\s+\d+|วาระ\s*\d+", re.IGNORECASE)
+_AGENDA_END = re.compile(r"ลงลายมือชื่อ|signature|ผู้รับรอง|ผู้ตรวจสอบ", re.IGNORECASE)
+
 
 _BRANCH_LINE = re.compile(r"สำนักงานสาขา\s+ตั้งอยู่")
 _MAIN_OFFICE = re.compile(r"สำนักงานแห่งใหญ่|ที่ตั้งสำนักงาน")
 _ADDRESS_LIKE = re.compile(r"เลขที่|ถนน|แขวง|ตำบล|อำเภอ|จังหวัด|กรุงเทพ")
+_MEETING_HEADER = re.compile(r"ระเบียบวาระ|วาระการประชุม|agenda", re.IGNORECASE)
 
 
 def _build_corpus(pages, max_chars: int = 3000) -> str:
@@ -263,6 +316,26 @@ def _find_directors_section(pages) -> str:
     return "\n".join(collected)
 
 
+def _find_agenda_section(pages, max_chars: int = 2000) -> str:
+    """Collect agenda items: วาระที่ N lines + their following description lines."""
+    flat = list(_iter_detections(pages))
+    collected: list[str] = []
+    in_agenda = False
+
+    for _, _, text in flat:
+        t = text.strip()
+        if not t or _WATERMARK.match(t):
+            continue
+        if _AGENDA_LINE.search(t) or _MEETING_HEADER.search(t):
+            in_agenda = True
+        if in_agenda:
+            if _AGENDA_END.search(t):
+                break
+            collected.append(t)
+
+    return "\n".join(collected)[:max_chars]
+
+
 def _annotate_locations(pages, fields: dict) -> None:
     """Best-effort: attach page/idx for single-line values."""
     for field in fields.values():
@@ -295,7 +368,8 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
     general = _build_corpus(pages, max_chars=max_chars)
     address = _find_address_section(pages)
     directors = _find_directors_section(pages)
-    print(f"[extractor] sections — general:{len(general)}c address:{len(address)}c directors:{len(directors)}c")
+    agenda = _find_agenda_section(pages)
+    print(f"[extractor] sections — general:{len(general)}c address:{len(address)}c directors:{len(directors)}c agenda:{len(agenda)}c")
 
     payload = json.dumps(
         {
@@ -303,7 +377,7 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
             "messages": [
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": _USER_TMPL.format(
-                    general=general, address=address, directors=directors
+                    general=general, address=address, directors=directors, agenda=agenda
                 )},
             ],
             "temperature": 0,
