@@ -4,11 +4,8 @@ import uuid
 from pathlib import Path
 
 import numpy as np
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption
-from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import pypdfium2 as pdfium
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from paddleocr import PaddleOCR
 
@@ -17,13 +14,7 @@ from extractor import extract_fields
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-DOCLING_MODELS_DIR = Path(__file__).parent / ".docling_models"
-DOCLING_MODELS_DIR.mkdir(exist_ok=True)
-DOCLING_ARTIFACTS_PATH = StandardPdfPipeline.download_models_hf(
-    local_dir=DOCLING_MODELS_DIR
-)
-
-IMAGES_SCALE = 2.0
+RENDER_SCALE = 2  # 72 dpi × 2 = 144 dpi
 
 app = FastAPI(title="PDF OCR POC")
 
@@ -45,25 +36,19 @@ ocr_engine = PaddleOCR(
     use_textline_orientation=False,
 )
 
-_pdf_pipeline_options = PdfPipelineOptions(artifacts_path=DOCLING_ARTIFACTS_PATH)
-_pdf_pipeline_options.images_scale = IMAGES_SCALE
-_pdf_pipeline_options.generate_page_images = True
-_pdf_pipeline_options.do_ocr = False
-_pdf_pipeline_options.do_table_structure = False
 
-doc_converter = DocumentConverter(
-    format_options={
-        InputFormat.PDF: PdfFormatOption(pipeline_options=_pdf_pipeline_options)
-    }
-)
-
-
-def render_pdf_pages(pdf_path: Path):
-    """Yield (1-based page_number, PIL.Image) for every page using Docling."""
-    result = doc_converter.convert(str(pdf_path))
-    for page_no, page in sorted(result.document.pages.items()):
-        if page.image is not None:
-            yield page_no, page.image.pil_image.convert("RGB")
+def render_pdf_pages(pdf_path: Path, max_pages: int | None = None):
+    """Yield (1-based page_number, PIL.Image) using pypdfium2 (fast, no ML)."""
+    doc = pdfium.PdfDocument(str(pdf_path))
+    total = len(doc)
+    limit = min(total, max_pages) if max_pages else total
+    for i in range(limit):
+        page = doc[i]
+        bitmap = page.render(scale=RENDER_SCALE)
+        pil_img = bitmap.to_pil().convert("RGB")
+        page.close()
+        yield i + 1, pil_img
+    doc.close()
 
 
 def run_ocr(img):
@@ -94,7 +79,10 @@ def health():
 
 
 @app.post("/ocr")
-async def ocr(file: UploadFile = File(...)):
+async def ocr(
+    file: UploadFile = File(...),
+    max_pages: int = Query(default=50, ge=1, le=500, description="Max pages to process"),
+):
     filename = file.filename or "upload.pdf"
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
@@ -105,7 +93,7 @@ async def ocr(file: UploadFile = File(...)):
 
     try:
         pages = []
-        for page_num, img in render_pdf_pages(saved_path):
+        for page_num, img in render_pdf_pages(saved_path, max_pages=max_pages):
             pages.append(
                 {
                     "page": page_num,

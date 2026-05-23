@@ -4,7 +4,6 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - docling_models:/app/.docling_models
       - paddle_models:/root/.paddlex
     environment:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
@@ -25,5 +24,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  docling_models:
   paddle_models:
