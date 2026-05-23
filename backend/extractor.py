@@ -152,7 +152,9 @@ _FIELD_KEYS = [
 ]
 
 _SYSTEM = (
-    "You are a data extraction assistant for Thai company affidavits (หนังสือรับรอง). "
+    "You are a data extraction assistant for Thai company documents. "
+    "Extract ONLY values explicitly present in the provided text. "
+    "Do NOT use prior knowledge or training data to fill in missing fields — if a field is not found in the text, return empty string. "
     "Return ONLY valid JSON — no markdown, no explanation. /no_think"
 )
 
