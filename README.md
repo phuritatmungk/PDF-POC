@@ -123,3 +123,4 @@ Field schema:
 **Frontend → Vercel:** import repo, set root directory = `frontend`, add `NEXT_PUBLIC_API_BASE` env var pointing to your backend tunnel URL.
 
 **Backend → local Docker:** run `demo.sh` which starts Docker + Cloudflare quick tunnel and prints the URL to paste into Vercel.
+ 
