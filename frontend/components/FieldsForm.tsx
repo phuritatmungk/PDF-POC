@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Fields, Selection } from "@/lib/types";
 
 const FIELD_LABELS: {
-  key: keyof Fields;
+  key: string;
   label: string;
   multiline?: boolean;
 }[] = [
