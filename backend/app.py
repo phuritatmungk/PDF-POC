@@ -100,15 +100,18 @@ async def ocr(file: UploadFile = File(...)):
     saved_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{filename}"
     saved_path.write_bytes(pdf_bytes)
 
-    pages = []
-    for page_num, img in render_pdf_pages(saved_path):
-        pages.append(
-            {
-                "page": page_num,
-                "width": img.width,
-                "height": img.height,
-                "detections": run_ocr(img),
-            }
-        )
+    try:
+        pages = []
+        for page_num, img in render_pdf_pages(saved_path):
+            pages.append(
+                {
+                    "page": page_num,
+                    "width": img.width,
+                    "height": img.height,
+                    "detections": run_ocr(img),
+                }
+            )
 
-    return {"pages": pages}
+        return {"pages": pages}
+    finally:
+        saved_path.unlink(missing_ok=True)
