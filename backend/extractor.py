@@ -235,7 +235,9 @@ _DIR_START = re.compile(r"กรรมการของ\S*มี\s*\d+\s*คน
 _DIR_END = re.compile(r"ชื่อและจำนวนกรรมการซึ่งมีอำนาจ|ข้อจำกัดอำนาจกรรมการ")
 
 _AGENDA_LINE = re.compile(r"วาระที่\s*\d+|Agenda\s+\d+|วาระ\s*\d+", re.IGNORECASE)
-_AGENDA_END = re.compile(r"ลงลายมือชื่อ|signature|ผู้รับรอง|ผู้ตรวจสอบ", re.IGNORECASE)
+# Only stop at real meeting-end markers. ผู้รับรอง/ผู้ตรวจสอบ can appear inside
+# agenda descriptions so we don't terminate on them.
+_AGENDA_END = re.compile(r"ปิดประชุม|ปิดการประชุม|signed\s+by|ลงชื่อ.*ประธาน", re.IGNORECASE)
 
 
 _BRANCH_LINE = re.compile(r"สำนักงานสาขา\s+ตั้งอยู่")
@@ -306,7 +308,7 @@ def _find_directors_section(pages) -> str:
     return "\n".join(collected)
 
 
-def _find_agenda_section(pages, max_chars: int = 2000) -> str:
+def _find_agenda_section(pages, max_chars: int = 8000) -> str:
     """Collect agenda items: วาระที่ N lines + their following description lines."""
     flat = list(_iter_detections(pages))
     collected: list[str] = []
@@ -371,7 +373,7 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
                 )},
             ],
             "temperature": 0,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "response_format": {"type": "json_object"},
         }
     ).encode()
