@@ -11,6 +11,8 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from paddleocr import PaddleOCR
 
+from extractor import extract_fields
+
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
@@ -116,6 +118,6 @@ async def ocr(file: UploadFile = File(...)):
                 }
             )
 
-        return {"pages": pages}
+        return {"pages": pages, "fields": extract_fields(pages)}
     finally:
         saved_path.unlink(missing_ok=True)

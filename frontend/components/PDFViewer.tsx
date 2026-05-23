@@ -11,7 +11,6 @@ type Props = {
   file: File;
   ocr: OcrResponse;
   zoom: number;
-  query: string;
   selected: Selection | null;
   onSelect: (s: Selection) => void;
 };
@@ -20,7 +19,6 @@ export default function PDFViewer({
   file,
   ocr,
   zoom,
-  query,
   selected,
   onSelect,
 }: Props) {
@@ -61,7 +59,6 @@ export default function PDFViewer({
               {ocrPage && (
                 <OCRBoxOverlay
                   page={ocrPage}
-                  query={query}
                   selected={selected}
                   onSelect={onSelect}
                 />

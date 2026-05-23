@@ -3,14 +3,13 @@
 import { useState } from "react";
 import UploadZone from "@/components/UploadZone";
 import PDFViewer from "@/components/PDFViewer";
-import Sidebar from "@/components/Sidebar";
+import FieldsForm from "@/components/FieldsForm";
 import Toolbar from "@/components/Toolbar";
 import type { OcrResponse, Selection } from "@/lib/types";
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [ocr, setOcr] = useState<OcrResponse | null>(null);
-  const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Selection | null>(null);
   const [zoom, setZoom] = useState(800);
 
@@ -43,7 +42,6 @@ export default function Home() {
           setFile(null);
           setOcr(null);
           setSelected(null);
-          setQuery("");
         }}
       />
       <div className="flex flex-1 overflow-hidden">
@@ -52,17 +50,14 @@ export default function Home() {
             file={file}
             ocr={ocr}
             zoom={zoom}
-            query={query}
             selected={selected}
             onSelect={setSelected}
           />
         </div>
-        <Sidebar
-          ocr={ocr}
+        <FieldsForm
+          key={file.name}
+          fields={ocr.fields}
           filename={file.name}
-          query={query}
-          onQueryChange={setQuery}
-          selected={selected}
           onSelect={setSelected}
         />
       </div>

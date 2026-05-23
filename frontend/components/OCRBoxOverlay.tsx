@@ -4,7 +4,6 @@ import type { PageResult, Selection } from "@/lib/types";
 
 type Props = {
   page: PageResult;
-  query: string;
   selected: Selection | null;
   onSelect: (s: Selection) => void;
 };
@@ -15,9 +14,7 @@ function confidenceColor(c: number) {
   return "rgb(239 68 68)";
 }
 
-export default function OCRBoxOverlay({ page, query, selected, onSelect }: Props) {
-  const q = query.trim().toLowerCase();
-
+export default function OCRBoxOverlay({ page, selected, onSelect }: Props) {
   return (
     <svg
       className="absolute inset-0 w-full h-full"
@@ -27,17 +24,12 @@ export default function OCRBoxOverlay({ page, query, selected, onSelect }: Props
     >
       {page.detections.map((d, i) => {
         const isSelected = selected?.page === page.page && selected.idx === i;
-        const isMatch = q.length > 0 && d.text.toLowerCase().includes(q);
         const stroke = isSelected
           ? "rgb(56 189 248)"
-          : isMatch
-            ? "rgb(244 114 182)"
-            : confidenceColor(d.confidence);
+          : confidenceColor(d.confidence);
         const fill = isSelected
           ? "rgba(56,189,248,0.25)"
-          : isMatch
-            ? "rgba(244,114,182,0.2)"
-            : "rgba(0,0,0,0.001)";
+          : "rgba(0,0,0,0.001)";
         return (
           <polygon
             key={i}

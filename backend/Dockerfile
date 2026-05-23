@@ -10,9 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        torch==2.5.1+cpu torchvision==0.20.1+cpu \
+    && pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
+COPY app.py extractor.py ./
 
 EXPOSE 8000
 
