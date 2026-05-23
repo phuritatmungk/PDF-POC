@@ -199,7 +199,7 @@ _SYSTEM = (
     "You are a data extraction assistant for Thai company documents. "
     "Extract ONLY values explicitly present in the provided text. "
     "Do NOT use prior knowledge or training data to fill in missing fields — if a field is not found in the text, return empty string. "
-    "Return ONLY valid JSON — no markdown, no explanation. /no_think"
+    "Return ONLY valid JSON — no markdown, no explanation."
 )
 
 _USER_TMPL = """Extract fields from a Thai company document. Return ONLY valid JSON.
@@ -370,6 +370,7 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
     directors = _find_directors_section(pages)
     agenda = _find_agenda_section(pages)
     print(f"[extractor] sections — general:{len(general)}c address:{len(address)}c directors:{len(directors)}c agenda:{len(agenda)}c")
+    print(f"[extractor] general[:300]: {general[:300]!r}")
 
     payload = json.dumps(
         {
