@@ -1,3 +1,4 @@
+import os
 import uuid
 from pathlib import Path
 
@@ -25,9 +26,12 @@ IMAGES_SCALE = 2.0
 
 app = FastAPI(title="PDF OCR POC")
 
+_origins_env = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
+ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

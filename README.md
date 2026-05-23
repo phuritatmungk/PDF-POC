@@ -6,9 +6,19 @@ Upload a PDF → backend extracts text with PaddleOCR → frontend displays the 
 
 ## Run
 
-Two terminals.
+### Option A — Docker (recommended for team demo)
 
-**Backend** (Windows, local Python):
+One command, both services:
+```bash
+docker compose up --build
+```
+First build is slow (~10 min: ~500 MB pip download for `paddlepaddle`, image lands at ~3–5 GB). First request also downloads OCR models into named volumes (`docling_models`, `paddle_models`) — these persist across rebuilds.
+
+Open http://localhost:3000.
+
+### Option B — Local dev (two terminals)
+
+**Backend**:
 ```bash
 cd backend
 python -m venv .venv
@@ -24,7 +34,22 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000.
+## Deploy
+
+**Frontend → Vercel** (free, shared URL):
+1. Push to GitHub (already done).
+2. Import the repo at https://vercel.com/new.
+3. Set **Root Directory** = `frontend` (Vercel will auto-detect Next.js).
+4. Add env var `NEXT_PUBLIC_API_BASE=http://localhost:8000` (browser-side; each user fetches from their own local backend).
+5. Deploy.
+
+**Backend → local Docker** (per machine):
+Each team member runs `docker compose up` on their own machine. The Vercel-hosted frontend will reach `http://localhost:8000` because browsers treat `localhost` as a secure context.
+
+If you change the Vercel deployment URL or use it from a different host, set the backend's `ALLOWED_ORIGINS` env var (comma-separated) to whitelist it for CORS:
+```bash
+ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:3000 docker compose up
+```
 
 ## Features
 

@@ -1,0 +1,10 @@
+.venv
+venv
+uploads
+.docling_models
+__pycache__
+*.pyc
+*.log
+install.log
+README.md
+pyrightconfig.json
