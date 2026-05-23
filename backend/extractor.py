@@ -20,9 +20,17 @@ DATE_TH = re.compile(
     r"กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม)\s*\d{4}"
 )
 DATE_NUM = re.compile(r"\b\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b")
-DIRECTORS_LABEL = re.compile(r"กรรมการ|director", re.IGNORECASE)
+DIRECTORS_LABEL = re.compile(r"(?:รายชื่อ)?กรรมการ(?:และ|$|\s)|directors?", re.IGNORECASE)
 BUSINESS_LABEL = re.compile(
     r"ประเภทธุรกิจ|business\s*type|nature\s*of\s*business", re.IGNORECASE
+)
+
+# Patterns that mark the start of a new section — used to stop multi-value collection.
+SECTION_BOUNDARY = re.compile(
+    r"ทุนจดทะเบียน|ที่อยู่|address|ประเภทธุรกิจ|business\s*type|"
+    r"วัตถุประสงค์|object|งบการเงิน|financial|โทร|tel|fax|"
+    r"ลงลายมือชื่อ|signature|หน้าที่|^\s*\d+\s*$",
+    re.IGNORECASE,
 )
 
 
@@ -41,7 +49,7 @@ def _find_first(pages, pattern, transform=lambda s: s):
 
 
 def _find_value_after_label(pages, label_pattern):
-    """Find a label match; return value after a colon in same detection, else next detection's text."""
+    """Find label; return value after colon on same line, else next detection's text."""
     flat = list(_iter_detections(pages))
     for i, (page, idx, text) in enumerate(flat):
         if label_pattern.search(text):
@@ -54,8 +62,45 @@ def _find_value_after_label(pages, label_pattern):
     return dict(DEFAULT_FIELD)
 
 
+def _find_multi_values_after_label(pages, label_pattern, max_items: int = 30):
+    """Find label; collect all subsequent detections until the next section boundary.
+    Returns a newline-joined value so the form can display each line separately.
+    """
+    flat = list(_iter_detections(pages))
+    for i, (page, idx, text) in enumerate(flat):
+        if not label_pattern.search(text):
+            continue
+
+        collected: list[str] = []
+        first_page, first_idx = page, idx
+
+        # Value on same line after colon
+        parts = re.split(r"[:：]", text, 1)
+        if len(parts) == 2 and parts[1].strip():
+            collected.append(parts[1].strip())
+            first_page, first_idx = page, idx
+
+        for j in range(i + 1, min(i + 1 + max_items, len(flat))):
+            np_, nidx, ntext = flat[j]
+            stripped = ntext.strip()
+            if not stripped:
+                continue
+            if SECTION_BOUNDARY.search(stripped):
+                break
+            collected.append(stripped)
+            if not collected:  # first item sets the locate reference
+                first_page, first_idx = np_, nidx
+
+        if collected:
+            return {
+                "value": "\n".join(collected),
+                "page": first_page,
+                "idx": first_idx,
+            }
+    return dict(DEFAULT_FIELD)
+
+
 def _find_id_near_label(pages, label_pattern):
-    """Find a 13-digit ID in a detection whose own text or previous detection's text contains the label."""
     flat = list(_iter_detections(pages))
     for i, (page, idx, text) in enumerate(flat):
         prev_text = flat[i - 1][2] if i > 0 else ""
@@ -87,9 +132,9 @@ def extract_fields(pages) -> dict[str, dict[str, Any]]:
         tax = registration
 
     capital = _find_value_after_label(pages, CAPITAL_LABEL)
-    address = _find_value_after_label(pages, ADDRESS_LABEL)
+    address = _find_multi_values_after_label(pages, ADDRESS_LABEL, max_items=10)
     business = _find_value_after_label(pages, BUSINESS_LABEL)
-    directors = _find_value_after_label(pages, DIRECTORS_LABEL)
+    directors = _find_multi_values_after_label(pages, DIRECTORS_LABEL, max_items=30)
 
     date = _find_first(pages, DATE_TH)
     if not date["value"]:

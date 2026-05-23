@@ -97,7 +97,7 @@ export default function FieldsForm({ fields, filename, onSelect }: Props) {
                     setValues((prev) => ({ ...prev, [key]: e.target.value }))
                   }
                   placeholder={empty ? "(not detected — fill manually)" : ""}
-                  rows={2}
+                  rows={Math.max(2, values[key].split("\n").length)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded text-sm resize-y focus:outline-none focus:border-sky-500 placeholder:text-slate-600"
                 />
               ) : (
