@@ -120,7 +120,7 @@ async def ocr_stream(file: UploadFile = File(...)):
     saved_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{filename}"
     saved_path.write_bytes(pdf_bytes)
 
-    def generate():
+    async def generate():
         try:
             total = _page_count(saved_path)
             pages = []
