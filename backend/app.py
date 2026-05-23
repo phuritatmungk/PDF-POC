@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import uuid
@@ -65,11 +66,17 @@ doc_converter = DocumentConverter(
 
 
 def render_pdf_pages(pdf_path: Path):
-    """Yield (page_number, PIL.Image) for each page using Docling."""
-    result = doc_converter.convert(source=pdf_path)
-    for page_no, page in result.document.pages.items():
-        img = page.image.pil_image
-        yield page_no, img.convert("RGB")
+    """Yield (1-based page_number, PIL.Image) page-by-page using pypdfium2."""
+    doc = pdfium.PdfDocument(str(pdf_path))
+    try:
+        for i in range(len(doc)):
+            page = doc[i]
+            bitmap = page.render(scale=IMAGES_SCALE)
+            img = bitmap.to_pil().convert("RGB")
+            page.close()
+            yield i + 1, img
+    finally:
+        doc.close()
 
 
 def run_ocr(img):
@@ -135,9 +142,10 @@ async def ocr_stream(file: UploadFile = File(...)):
                     }
                 )
                 yield _sse({"type": "progress", "page": page_num, "total": total})
-            yield _sse(
-                {"type": "done", "pages": pages, "fields": extract_fields(pages)}
-            )
+                await asyncio.sleep(0)  # flush chunk to client before next page
+            yield _sse({"type": "extracting"})
+            fields = extract_fields(pages)
+            yield _sse({"type": "done", "pages": pages, "fields": fields})
         finally:
             saved_path.unlink(missing_ok=True)
 

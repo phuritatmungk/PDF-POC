@@ -8,12 +8,15 @@ set -euo pipefail
 DOCKER_BIN="/c/Users/chait/AppData/Local/Programs/DockerDesktop/resources/bin"
 CLOUDFLARED="/c/Program Files (x86)/cloudflared/cloudflared.exe"
 VERCEL_ORIGIN="${VERCEL_ORIGIN:-https://pdf-poc-opal.vercel.app}"
+LLM_BASE_URL="${LLM_BASE_URL:-http://host.docker.internal:8080}"
 
 export PATH="$DOCKER_BIN:$PATH"
 cd "$(dirname "$0")"
 
-echo ">>> Starting Docker stack with ALLOWED_ORIGINS=$VERCEL_ORIGIN"
-ALLOWED_ORIGINS="$VERCEL_ORIGIN,http://localhost:3000" docker compose up -d
+echo ">>> Starting Docker stack with ALLOWED_ORIGINS=$VERCEL_ORIGIN, LLM_BASE_URL=$LLM_BASE_URL"
+ALLOWED_ORIGINS="$VERCEL_ORIGIN,http://localhost:3000" \
+  LLM_BASE_URL="$LLM_BASE_URL" \
+  docker compose up -d
 
 echo ">>> Waiting for backend /health ..."
 until curl -sf http://localhost:8000/health >/dev/null 2>&1; do sleep 2; done

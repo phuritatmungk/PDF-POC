@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { uploadPdfForOcr } from "@/lib/api";
 import type { OcrResponse } from "@/lib/types";
 
@@ -12,23 +12,51 @@ export default function UploadZone({ onResult }: Props) {
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<{ page: number; total: number } | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [eta, setEta] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const startTimeRef = useRef<number | null>(null);
 
   const handleFile = useCallback(
     async (file: File) => {
       setError(null);
       setProgress(null);
+      setExtracting(false);
+      setEta(null);
       setLoading(true);
+      startTimeRef.current = null;
+      const controller = new AbortController();
+      abortRef.current = controller;
       try {
-        const result = await uploadPdfForOcr(file, (page, total) =>
-          setProgress({ page, total }),
+        const result = await uploadPdfForOcr(
+          file,
+          (page, total) => {
+            const now = Date.now();
+            if (!startTimeRef.current) {
+              startTimeRef.current = now;
+            } else {
+              const elapsed = (now - startTimeRef.current) / 1000;
+              const avgPerPage = elapsed / page;
+              setEta(Math.round(avgPerPage * (total - page)));
+            }
+            setProgress({ page, total });
+          },
+          () => { setProgress(null); setEta(null); setExtracting(true); },
+          controller.signal,
         );
         onResult(file, result);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Upload failed");
+        if ((e as Error).name !== "AbortError") {
+          setError(e instanceof Error ? e.message : "Upload failed");
+        }
       } finally {
+        abortRef.current = null;
+        startTimeRef.current = null;
         setLoading(false);
         setProgress(null);
+        setExtracting(false);
+        setEta(null);
       }
     },
     [onResult],
@@ -53,7 +81,15 @@ export default function UploadZone({ onResult }: Props) {
       {loading ? (
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
-          {progress ? (
+          <button
+            onClick={() => abortRef.current?.abort()}
+            className="px-3 py-1 rounded text-xs font-medium bg-slate-700 hover:bg-red-700 text-slate-300 hover:text-white transition-colors"
+          >
+            Stop
+          </button>
+          {extracting ? (
+            <p className="text-sky-300 text-sm">Extracting fields with AI…</p>
+          ) : progress ? (
             <>
               <p className="text-slate-300 text-sm">
                 Processing page {progress.page} of {progress.total}…
@@ -64,7 +100,9 @@ export default function UploadZone({ onResult }: Props) {
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              <p className="text-slate-500 text-xs">{pct}%</p>
+              <p className="text-slate-500 text-xs">
+                {pct}%{eta !== null && eta > 0 ? ` · ~${eta}s remaining` : ""}
+              </p>
             </>
           ) : (
             <p className="text-slate-300 text-sm">Uploading…</p>

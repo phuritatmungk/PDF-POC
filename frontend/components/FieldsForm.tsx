@@ -30,6 +30,7 @@ export default function FieldsForm({ fields, filename, onSelect }: Props) {
       FIELD_LABELS.map((f) => [f.key, fields[f.key]?.value ?? ""]),
     ),
   );
+  const [openAddresses, setOpenAddresses] = useState<Set<number>>(new Set());
 
   const exportData = () => {
     const data = {
@@ -73,6 +74,15 @@ export default function FieldsForm({ fields, filename, onSelect }: Props) {
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-medium uppercase tracking-wide text-slate-400">
                   {label}
+                  {key === "address" && values[key] && (() => {
+                    const allLines = values[key].split("\n").filter((l) => l.trim());
+                    const branchCount = allLines.filter((l) => l.includes("สำนักงานสาขา")).length;
+                    return (
+                      <span className="ml-2 normal-case text-slate-500">
+                        ({allLines.length} location{allLines.length !== 1 ? "s" : ""}{branchCount > 0 ? `, ${branchCount} branch${branchCount !== 1 ? "es" : ""}` : ""})
+                      </span>
+                    );
+                  })()}
                 </label>
                 {canLocate ? (
                   <button
@@ -90,7 +100,50 @@ export default function FieldsForm({ fields, filename, onSelect }: Props) {
                   </span>
                 )}
               </div>
-              {multiline ? (
+              {key === "address" ? (
+                (() => {
+                  const lines = values[key].split("\n").filter((l) => l.trim());
+                  if (lines.length === 0) return (
+                    <input
+                      type="text"
+                      value=""
+                      onChange={(e) => setValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                      placeholder="(not detected — fill manually)"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded text-sm focus:outline-none focus:border-sky-500 placeholder:text-slate-600"
+                    />
+                  );
+                  return (
+                    <div className="space-y-1">
+                      {lines.map((line, i) => (
+                        <div key={i} className="border border-slate-700 rounded overflow-hidden">
+                          <button
+                            className="w-full flex items-center justify-between px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 text-left"
+                            onClick={() => setOpenAddresses((prev) => {
+                              const next = new Set(prev);
+                              next.has(i) ? next.delete(i) : next.add(i);
+                              return next;
+                            })}
+                          >
+                            <span className="truncate">{line.length > 55 ? line.slice(0, 55) + "…" : line}</span>
+                            <span className="ml-2 shrink-0 text-slate-500">{openAddresses.has(i) ? "▲" : "▼"}</span>
+                          </button>
+                          {openAddresses.has(i) && (
+                            <textarea
+                              value={line}
+                              rows={3}
+                              onChange={(e) => {
+                                const updated = lines.map((l, j) => j === i ? e.target.value : l);
+                                setValues((prev) => ({ ...prev, [key]: updated.join("\n") }));
+                              }}
+                              className="w-full px-3 py-2 bg-slate-950 border-t border-slate-700 text-sm resize-y focus:outline-none"
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()
+              ) : multiline ? (
                 <textarea
                   value={values[key]}
                   onChange={(e) =>
