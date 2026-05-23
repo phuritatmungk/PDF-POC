@@ -25,11 +25,23 @@ type Props = {
 };
 
 export default function FieldsForm({ fields, filename, onSelect }: Props) {
-  const [values, setValues] = useState<Record<string, string>>(() => ({
-    ...Object.fromEntries(FIELD_LABELS.map((f) => [f.key, fields[f.key]?.value ?? ""])),
-    topics: fields.topics?.value ?? "",
-    descriptions: fields.descriptions?.value ?? "",
-  }));
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(FIELD_LABELS.map((f) => [f.key, fields[f.key]?.value ?? ""]))
+  );
+
+  // Build agenda pairs from topic_N / description_N fields
+  const [agendaItems, setAgendaItems] = useState<{ topic: string; description: string }[]>(() => {
+    const items: { topic: string; description: string }[] = [];
+    let i = 1;
+    while (fields[`topic_${i}`] !== undefined) {
+      items.push({
+        topic: fields[`topic_${i}`]?.value ?? "",
+        description: fields[`description_${i}`]?.value ?? "",
+      });
+      i++;
+    }
+    return items;
+  });
   const [openAddresses, setOpenAddresses] = useState<Set<number>>(new Set());
   const [openAgendas, setOpenAgendas] = useState<Set<number>>(new Set());
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -61,12 +73,10 @@ export default function FieldsForm({ fields, filename, onSelect }: Props) {
   }
 
   const exportData = () => {
-    const topicLines = values.topics.split("\n").filter((l) => l.trim());
-    const descLines = values.descriptions.split("\n");
     const agendaFields: Record<string, string> = {};
-    topicLines.forEach((t, i) => {
-      agendaFields[`topic_${i + 1}`] = t;
-      agendaFields[`description_${i + 1}`] = descLines[i] ?? "";
+    agendaItems.forEach((item, i) => {
+      agendaFields[`topic_${i + 1}`] = item.topic;
+      agendaFields[`description_${i + 1}`] = item.description;
     });
     const data = {
       source: filename,
@@ -201,109 +211,105 @@ export default function FieldsForm({ fields, filename, onSelect }: Props) {
         })}
 
         {/* Agenda Section */}
-        {(() => {
-          const topicLines = values.topics.split("\n").filter((l) => l.trim());
-          const descLines = values.descriptions.split("\n");
-          const hasAgenda = topicLines.length > 0;
-          return (
-            <div>
-              <div className="flex items-center justify-between mb-1.5 mt-2 pt-3 border-t border-slate-800">
-                <label className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Meeting Agenda
-                  {hasAgenda && (
-                    <span className="ml-2 normal-case text-slate-500">
-                      ({topicLines.length} item{topicLines.length !== 1 ? "s" : ""})
-                    </span>
-                  )}
-                </label>
-                {fields.topics.page != null && fields.topics.idx != null ? (
-                  <button
-                    onClick={() => onSelect({ page: fields.topics.page!, idx: fields.topics.idx! })}
-                    className="text-[10px] font-semibold text-sky-400 hover:text-sky-300 uppercase tracking-wider"
-                  >
-                    Locate ↗
-                  </button>
-                ) : (
-                  <span className="text-[10px] text-slate-600 uppercase tracking-wider">
-                    {hasAgenda ? "" : "not found"}
-                  </span>
-                )}
-              </div>
-              {hasAgenda ? (
-                <div className="space-y-1">
-                  {topicLines.map((topic, i) => {
-                    const topicKey = `agenda-topic-${i}`;
-                    const descKey = `agenda-desc-${i}`;
-                    return (
-                      <div key={i} className="border border-slate-700 rounded overflow-hidden">
-                        <button
-                          className="w-full flex items-center justify-between px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 text-left"
-                          onClick={() => setOpenAgendas((prev) => {
-                            const next = new Set(prev);
-                            next.has(i) ? next.delete(i) : next.add(i);
-                            return next;
-                          })}
-                        >
-                          <span className="truncate">
-                            <span className="text-slate-500 mr-1.5">{i + 1}.</span>
-                            {topic.length > 50 ? topic.slice(0, 50) + "…" : topic}
-                          </span>
-                          <span className="ml-2 shrink-0 text-slate-500">{openAgendas.has(i) ? "▲" : "▼"}</span>
-                        </button>
-                        {openAgendas.has(i) && (
-                          <div className="border-t border-slate-700 bg-slate-950">
-                            <input
-                              type="text"
-                              value={topic}
-                              onChange={(e) => {
-                                const updated = topicLines.map((t, j) => j === i ? e.target.value : t);
-                                setValues((prev) => ({ ...prev, topics: updated.join("\n") }));
-                              }}
-                              className={`w-full px-3 py-1.5 bg-transparent border-b text-xs text-slate-300 focus:outline-none transition-colors ${dragOver === topicKey ? "border-sky-400 bg-sky-950/30" : "border-slate-800"}`}
-                              placeholder="Topic title"
-                              {...dropProps(topicKey, false)}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                setDragOver(null);
-                                const text = e.dataTransfer.getData("text/plain").trim();
-                                if (!text) return;
-                                const updated = topicLines.map((t, j) => j === i ? text : t);
-                                setValues((prev) => ({ ...prev, topics: updated.join("\n") }));
-                              }}
-                            />
-                            <textarea
-                              value={descLines[i] ?? ""}
-                              rows={3}
-                              onChange={(e) => {
-                                const updated = topicLines.map((_, j) => j === i ? e.target.value : (descLines[j] ?? ""));
-                                setValues((prev) => ({ ...prev, descriptions: updated.join("\n") }));
-                              }}
-                              placeholder="Description / resolution — drop text here"
-                              className={`w-full px-3 py-2 bg-transparent text-sm resize-y focus:outline-none placeholder:text-slate-600 transition-colors ${dragOver === descKey ? "bg-sky-950/30 border border-sky-400 rounded" : ""}`}
-                              {...dropProps(descKey, false)}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                setDragOver(null);
-                                const text = e.dataTransfer.getData("text/plain").trim();
-                                if (!text) return;
-                                const existing = descLines[i] ?? "";
-                                const newVal = existing ? `${existing} ${text}` : text;
-                                const updated = topicLines.map((_, j) => j === i ? newVal : (descLines[j] ?? ""));
-                                setValues((prev) => ({ ...prev, descriptions: updated.join("\n") }));
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-600 italic">(no agenda items detected)</p>
+        <div>
+          <div className="flex items-center justify-between mb-1.5 mt-2 pt-3 border-t border-slate-800">
+            <label className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Meeting Agenda
+              {agendaItems.length > 0 && (
+                <span className="ml-2 normal-case text-slate-500">
+                  ({agendaItems.length} item{agendaItems.length !== 1 ? "s" : ""})
+                </span>
               )}
+            </label>
+            <button
+              onClick={() => setAgendaItems((prev) => [...prev, { topic: "", description: "" }])}
+              className="text-[10px] font-semibold text-sky-400 hover:text-sky-300 uppercase tracking-wider"
+              title="Add agenda item"
+            >
+              + Add
+            </button>
+          </div>
+          {agendaItems.length > 0 ? (
+            <div className="space-y-1">
+              {agendaItems.map((item, i) => {
+                const topicKey = `agenda-topic-${i}`;
+                const descKey = `agenda-desc-${i}`;
+                return (
+                  <div key={i} className="border border-slate-700 rounded overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 text-left"
+                      onClick={() => setOpenAgendas((prev) => {
+                        const next = new Set(prev);
+                        next.has(i) ? next.delete(i) : next.add(i);
+                        return next;
+                      })}
+                    >
+                      <span className="truncate">
+                        <span className="text-slate-500 mr-1.5">{i + 1}.</span>
+                        {item.topic
+                          ? (item.topic.length > 50 ? item.topic.slice(0, 50) + "…" : item.topic)
+                          : <span className="text-slate-600 italic">empty topic</span>}
+                      </span>
+                      <span className="ml-2 shrink-0 text-slate-500">{openAgendas.has(i) ? "▲" : "▼"}</span>
+                    </button>
+                    {openAgendas.has(i) && (
+                      <div className="border-t border-slate-700 bg-slate-950">
+                        <input
+                          type="text"
+                          value={item.topic}
+                          onChange={(e) => setAgendaItems((prev) =>
+                            prev.map((a, j) => j === i ? { ...a, topic: e.target.value } : a)
+                          )}
+                          className={`w-full px-3 py-1.5 bg-transparent border-b text-xs text-slate-300 focus:outline-none transition-colors ${dragOver === topicKey ? "border-sky-400 bg-sky-950/30" : "border-slate-800"}`}
+                          placeholder="Topic title — drop text here"
+                          onDragOver={(e) => { e.preventDefault(); setDragOver(topicKey); }}
+                          onDragLeave={() => setDragOver(null)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOver(null);
+                            const text = e.dataTransfer.getData("text/plain").trim();
+                            if (!text) return;
+                            setAgendaItems((prev) =>
+                              prev.map((a, j) => j === i ? { ...a, topic: text } : a)
+                            );
+                          }}
+                        />
+                        <textarea
+                          value={item.description}
+                          rows={3}
+                          onChange={(e) => setAgendaItems((prev) =>
+                            prev.map((a, j) => j === i ? { ...a, description: e.target.value } : a)
+                          )}
+                          placeholder="Description / resolution — drop text here"
+                          className={`w-full px-3 py-2 bg-transparent text-sm resize-y focus:outline-none placeholder:text-slate-600 transition-colors ${dragOver === descKey ? "bg-sky-950/30 border border-sky-400 rounded" : ""}`}
+                          onDragOver={(e) => { e.preventDefault(); setDragOver(descKey); }}
+                          onDragLeave={() => setDragOver(null)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOver(null);
+                            const text = e.dataTransfer.getData("text/plain").trim();
+                            if (!text) return;
+                            setAgendaItems((prev) =>
+                              prev.map((a, j) => j === i ? { ...a, description: a.description ? `${a.description} ${text}` : text } : a)
+                            );
+                          }}
+                        />
+                        <button
+                          onClick={() => setAgendaItems((prev) => prev.filter((_, j) => j !== i))}
+                          className="w-full px-3 py-1 text-[10px] text-red-500 hover:bg-red-950/30 text-left transition-colors"
+                        >
+                          Remove item
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })()}
+          ) : (
+            <p className="text-xs text-slate-600 italic">(no agenda items detected)</p>
+          )}
+        </div>
       </div>
     </aside>
   );

@@ -108,23 +108,16 @@ def _find_id_near_label(pages, label_pattern):
     return dict(DEFAULT_FIELD)
 
 
-def _extract_agenda_heuristic(pages) -> tuple[dict, dict]:
-    """Return (topics_field, descriptions_field) by scanning for วาระที่ N lines."""
+def _extract_agenda_heuristic(pages) -> list[dict]:
+    """Return list of {topic, description, page, idx} by scanning for วาระที่ N lines."""
     flat = list(_iter_detections(pages))
-    topics: list[str] = []
-    descriptions: list[str] = []
-    first_page: int | None = None
-    first_idx: int | None = None
+    items: list[dict] = []
 
     i = 0
     while i < len(flat):
         page, idx, text = flat[i]
         t = text.strip()
         if _AGENDA_LINE.search(t):
-            if first_page is None:
-                first_page, first_idx = page, idx
-            topics.append(t)
-            # collect following lines as description until next วาระ or end marker
             desc_parts: list[str] = []
             j = i + 1
             while j < len(flat):
@@ -137,14 +130,12 @@ def _extract_agenda_heuristic(pages) -> tuple[dict, dict]:
                     break
                 desc_parts.append(nt)
                 j += 1
-            descriptions.append(" ".join(desc_parts))
+            items.append({"topic": t, "description": " ".join(desc_parts), "page": page, "idx": idx})
             i = j
             continue
         i += 1
 
-    topics_field: dict = {"value": "\n".join(topics), "page": first_page, "idx": first_idx}
-    descs_field: dict = {"value": "\n".join(descriptions), "page": first_page, "idx": first_idx}
-    return topics_field, descs_field
+    return items
 
 
 def extract_fields_heuristic(pages) -> dict[str, dict[str, Any]]:
@@ -164,8 +155,8 @@ def extract_fields_heuristic(pages) -> dict[str, dict[str, Any]]:
     date = _find_first(pages, DATE_TH)
     if not date["value"]:
         date = _find_first(pages, DATE_NUM)
-    topics, descriptions = _extract_agenda_heuristic(pages)
-    return {
+    agenda_items = _extract_agenda_heuristic(pages)
+    result: dict[str, Any] = {
         "company_name": company,
         "registration_number": registration,
         "tax_id": tax,
@@ -174,9 +165,11 @@ def extract_fields_heuristic(pages) -> dict[str, dict[str, Any]]:
         "report_date": date,
         "business_type": business,
         "directors": directors,
-        "topics": topics,
-        "descriptions": descriptions,
     }
+    for i, item in enumerate(agenda_items, 1):
+        result[f"topic_{i}"] = {"value": item["topic"], "page": item["page"], "idx": item["idx"]}
+        result[f"description_{i}"] = {"value": item["description"], "page": item["page"], "idx": item["idx"]}
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -191,8 +184,6 @@ _FIELD_KEYS = [
     "report_date",
     "business_type",
     "directors",
-    "topics",
-    "descriptions",
 ]
 
 _SYSTEM = (
@@ -225,10 +216,9 @@ RULES:
 - report_date: document date
 - business_type: nature of business
 - directors: ALL names from the numbered list (1. 2. 3. ...) in DIRECTORS TEXT, one per line, no number prefix. Do NOT use signing-authority text.
-- topics: agenda item titles from AGENDA TEXT, one per line (e.g. "เรื่องรับรองรายงานการประชุม"). Empty string if no agenda found.
-- descriptions: corresponding description/resolution for each agenda item, one per line (same count as topics). Empty string if no agenda found.
+- agenda: array of objects, one per agenda item found in AGENDA TEXT. Each object has "topic" (the agenda title, e.g. "วาระที่ 1 รับรองรายงานการประชุม") and "description" (the body text / resolution for that item). Use [] if no agenda found.
 
-{{"company_name":"...","registration_number":"...","tax_id":"...","registered_capital":"...","address":"mainoffice\\nbranch1\\nbranch2","report_date":"...","business_type":"...","directors":"name1\\nname2\\nname3","topics":"topic1\\ntopic2","descriptions":"desc1\\ndesc2"}}"""
+{{"company_name":"...","registration_number":"...","tax_id":"...","registered_capital":"...","address":"mainoffice\\nbranch1\\nbranch2","report_date":"...","business_type":"...","directors":"name1\\nname2\\nname3","agenda":[{{"topic":"วาระที่ 1 ...","description":"..."}},{{"topic":"วาระที่ 2 ...","description":"..."}}]}}"""
 
 # Patterns for corpus filtering
 _WATERMARK = re.compile(
@@ -407,7 +397,7 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
     raw = re.sub(r"\s*```$", "", raw)
 
     data: dict = json.loads(raw)
-    result = {
+    result: dict[str, Any] = {
         key: {"value": str(data.get(key, "") or ""), "page": None, "idx": None}
         for key in _FIELD_KEYS
     }
@@ -415,6 +405,15 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
     cn = result["company_name"]["value"]
     if cn:
         result["company_name"]["value"] = re.sub(r"^(?:บริษัท\s+)+", "บริษัท ", cn)
+
+    # Flatten agenda array → topic_1/description_1, topic_2/description_2, ...
+    agenda_items = data.get("agenda", [])
+    if isinstance(agenda_items, list):
+        for i, item in enumerate(agenda_items, 1):
+            if isinstance(item, dict):
+                result[f"topic_{i}"] = {"value": str(item.get("topic", "") or ""), "page": None, "idx": None}
+                result[f"description_{i}"] = {"value": str(item.get("description", "") or ""), "page": None, "idx": None}
+
     _annotate_locations(pages, result)
     return result
 

@@ -26,8 +26,8 @@ export type Fields = {
   report_date: FieldExtraction;
   business_type: FieldExtraction;
   directors: FieldExtraction;
-  topics: FieldExtraction;
-  descriptions: FieldExtraction;
+  // Dynamic agenda pairs: topic_1, description_1, topic_2, description_2, ...
+  [key: string]: FieldExtraction;
 };
 
 export type OcrResponse = { pages: PageResult[]; fields: Fields };
