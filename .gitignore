@@ -53,5 +53,9 @@ backend/.docling_models/
 .docling_models/
 *.safetensors
 
+# --- Local-only test/reference PDFs ---
+knowledge/
+*.pdf
+
 # --- Local Claude / tooling ---
 .claude/settings.local.json
