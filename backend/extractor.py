@@ -378,6 +378,8 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
             "temperature": 0,
             "max_tokens": 8192,
             "response_format": {"type": "json_object"},
+            # Gemini's OpenAI compat layer: turn off thinking for speed (ignored by llama.cpp/OpenRouter).
+            "reasoning_effort": "none",
         }
     ).encode()
 
