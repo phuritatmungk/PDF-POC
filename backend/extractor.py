@@ -201,7 +201,7 @@ _USER_TMPL = """Extract fields from a Thai company document. Return ONLY valid J
 === ADDRESS TEXT (extract address from this only) ===
 {address}
 
-=== DIRECTORS TEXT (extract director names from this only) ===
+=== DIRECTORS TEXT (extract director names from this only; if empty, directors MUST be "") ===
 {directors}
 
 === AGENDA TEXT (extract meeting agenda topics and descriptions from this only) ===
@@ -215,7 +215,7 @@ RULES:
 - address: main office on line 1, each สำนักงานสาขา on its own line (join address fragments with spaces). Exclude warnings/watermarks/DBD text.
 - report_date: document date
 - business_type: nature of business
-- directors: ALL names from the numbered list (1. 2. 3. ...) in DIRECTORS TEXT, one per line, no number prefix. Do NOT use signing-authority text.
+- directors: STRICT — if DIRECTORS TEXT is empty or has no numbered name list, return empty string "". Otherwise extract names from the numbered list (1. 2. 3. ...) in DIRECTORS TEXT only, one per line, no number prefix. NEVER pull names from GENERAL TEXT or AGENDA TEXT. NEVER include sentence text or agenda body.
 - agenda: array of objects, one per agenda item found in AGENDA TEXT. Each object has "topic" (the agenda title, e.g. "วาระที่ 1 รับรองรายงานการประชุม") and "description" (the body text / resolution for that item). Use [] if no agenda found.
 
 {{"company_name":"...","registration_number":"...","tax_id":"...","registered_capital":"...","address":"mainoffice\\nbranch1\\nbranch2","report_date":"...","business_type":"...","directors":"name1\\nname2\\nname3","agenda":[{{"topic":"วาระที่ 1 ...","description":"..."}},{{"topic":"วาระที่ 2 ...","description":"..."}}]}}"""
