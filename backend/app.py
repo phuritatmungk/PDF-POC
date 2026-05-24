@@ -7,6 +7,7 @@ import numpy as np
 import pypdfium2 as pdfium
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from paddleocr import PaddleOCR
 
 from extractor import extract_fields
@@ -35,6 +36,13 @@ ocr_engine = PaddleOCR(
     use_doc_unwarping=False,
     use_textline_orientation=False,
 )
+
+
+def pdf_page_count(pdf_path: Path, max_pages: int | None = None) -> int:
+    doc = pdfium.PdfDocument(str(pdf_path))
+    total = len(doc)
+    doc.close()
+    return min(total, max_pages) if max_pages else total
 
 
 def render_pdf_pages(pdf_path: Path, max_pages: int | None = None):
@@ -83,6 +91,12 @@ async def ocr(
     file: UploadFile = File(...),
     max_pages: int = Query(default=50, ge=1, le=500, description="Max pages to process"),
 ):
+    """Stream NDJSON progress events while processing the PDF.
+
+    Events: {"type":"rendered","total":N}, {"type":"page","current":i,"total":N},
+            {"type":"extracting"}, {"type":"done","result":{...}},
+            {"type":"error","message":"..."}
+    """
     filename = file.filename or "upload.pdf"
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
@@ -91,17 +105,30 @@ async def ocr(
     saved_path = UPLOAD_DIR / f"{uuid.uuid4().hex}_{filename}"
     saved_path.write_bytes(pdf_bytes)
 
-    try:
-        pages = []
-        for page_num, img in render_pdf_pages(saved_path, max_pages=max_pages):
-            pages.append(
-                {
-                    "page": page_num,
-                    "width": img.width,
-                    "height": img.height,
-                    "detections": run_ocr(img),
-                }
-            )
-        return {"pages": pages, "fields": extract_fields(pages)}
-    finally:
-        saved_path.unlink(missing_ok=True)
+    def event(obj) -> bytes:
+        return (json.dumps(obj) + "\n").encode()
+
+    def stream():
+        try:
+            total = pdf_page_count(saved_path, max_pages=max_pages)
+            yield event({"type": "rendered", "total": total})
+            pages = []
+            for page_num, img in render_pdf_pages(saved_path, max_pages=max_pages):
+                pages.append(
+                    {
+                        "page": page_num,
+                        "width": img.width,
+                        "height": img.height,
+                        "detections": run_ocr(img),
+                    }
+                )
+                yield event({"type": "page", "current": page_num, "total": total})
+            yield event({"type": "extracting"})
+            fields = extract_fields(pages)
+            yield event({"type": "done", "result": {"pages": pages, "fields": fields}})
+        except Exception as exc:
+            yield event({"type": "error", "message": str(exc)})
+        finally:
+            saved_path.unlink(missing_ok=True)
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
