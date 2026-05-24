@@ -9,6 +9,7 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
       - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:8080}
       - LLM_MODEL=${LLM_MODEL:-local-model}
+      - LLM_API_KEY=${LLM_API_KEY:-}
       - PYTHONUNBUFFERED=1
     restart: unless-stopped
 

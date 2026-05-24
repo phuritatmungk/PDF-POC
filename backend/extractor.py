@@ -350,10 +350,13 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
     import urllib.error
     import urllib.request
 
-    # LLM_BASE_URL: llama.cpp default is :8080, Ollama is :11434
+    # LLM_BASE_URL: llama.cpp = :8080, Ollama = :11434,
+    # Gemini = https://generativelanguage.googleapis.com/v1beta/openai
     base_url = os.environ.get("LLM_BASE_URL", "http://localhost:8080").rstrip("/")
-    # LLM_MODEL: required for Ollama; llama.cpp ignores it (uses loaded model)
+    # LLM_MODEL: required by Ollama/Gemini/OpenRouter; llama.cpp ignores it
     model = os.environ.get("LLM_MODEL", "local-model")
+    # LLM_API_KEY: required by hosted providers (Gemini, OpenRouter, OpenAI); local llama.cpp doesn't need one
+    api_key = os.environ.get("LLM_API_KEY", "").strip()
     # MAX_CORPUS_CHARS: keep corpus within context window (~8k tokens ≈ 12k chars)
     max_chars = int(os.environ.get("LLM_MAX_CORPUS_CHARS", "3000"))
 
@@ -378,10 +381,13 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
         }
     ).encode()
 
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     req = urllib.request.Request(
         f"{base_url}/v1/chat/completions",
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
