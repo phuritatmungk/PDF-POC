@@ -392,12 +392,27 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
         headers=headers,
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            body = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {e.code} from LLM server: {err_body[:300]}")
+
+    # Retry transient 429/503 (rate-limit / overload) with exponential backoff.
+    import time
+    body = None
+    last_err: Exception | None = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                body = json.loads(resp.read())
+            break
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            if e.code in (429, 503) and attempt < 2:
+                wait = 2 ** attempt  # 1s, 2s
+                print(f"[extractor] LLM HTTP {e.code} (attempt {attempt+1}/3), retrying in {wait}s")
+                time.sleep(wait)
+                last_err = e
+                continue
+            raise RuntimeError(f"HTTP {e.code} from LLM server: {err_body[:300]}")
+    if body is None:
+        raise RuntimeError(f"LLM failed after retries: {last_err}")
 
     raw = body["choices"][0]["message"]["content"].strip()
     # Strip Qwen3/thinking-model <think>...</think> blocks
