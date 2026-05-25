@@ -345,19 +345,36 @@ def _annotate_locations(pages, fields: dict) -> None:
                 break
 
 
-def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
-    """Call any OpenAI-compatible server: llama.cpp (default) or Ollama."""
+def _call_llm_once(req, label: str):
+    """Single call with retry on 429/503. Returns parsed body or raises RuntimeError."""
+    import time
     import urllib.error
     import urllib.request
 
-    # LLM_BASE_URL: llama.cpp = :8080, Ollama = :11434,
-    # Gemini = https://generativelanguage.googleapis.com/v1beta/openai
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            if e.code in (429, 503) and attempt < 2:
+                wait = 2 ** attempt
+                print(f"[extractor] {label} HTTP {e.code} (attempt {attempt+1}/3), retrying in {wait}s")
+                time.sleep(wait)
+                continue
+            raise RuntimeError(f"HTTP {e.code} from {label}: {err_body[:300]}")
+    raise RuntimeError(f"{label} failed after 3 attempts")
+
+
+def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
+    """Call any OpenAI-compatible server. Supports model fallback chain via LLM_MODEL=primary,fallback1,fallback2."""
+    import urllib.request
+
     base_url = os.environ.get("LLM_BASE_URL", "http://localhost:8080").rstrip("/")
-    # LLM_MODEL: required by Ollama/Gemini/OpenRouter; llama.cpp ignores it
-    model = os.environ.get("LLM_MODEL", "local-model")
-    # LLM_API_KEY: required by hosted providers (Gemini, OpenRouter, OpenAI); local llama.cpp doesn't need one
+    # LLM_MODEL: comma-separated chain — first is primary, rest are fallbacks tried on overload/missing model.
+    # E.g. "gemini-3.1-flash-lite,gemini-2.5-flash-lite,gemini-2.0-flash-lite"
+    models = [m.strip() for m in os.environ.get("LLM_MODEL", "local-model").split(",") if m.strip()]
     api_key = os.environ.get("LLM_API_KEY", "").strip()
-    # MAX_CORPUS_CHARS: keep corpus within context window (~8k tokens ≈ 12k chars)
     max_chars = int(os.environ.get("LLM_MAX_CORPUS_CHARS", "3000"))
 
     general = _build_corpus(pages, max_chars=max_chars)
@@ -366,53 +383,42 @@ def extract_fields_llm(pages) -> dict[str, dict[str, Any]]:
     agenda = _find_agenda_section(pages)
     print(f"[extractor] sections — general:{len(general)}c address:{len(address)}c directors:{len(directors)}c agenda:{len(agenda)}c")
 
-    payload = json.dumps(
-        {
+    user_content = _USER_TMPL.format(general=general, address=address, directors=directors, agenda=agenda)
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    body = None
+    last_err: Exception | None = None
+    for model in models:
+        payload = json.dumps({
             "model": model,
             "messages": [
                 {"role": "system", "content": _SYSTEM},
-                {"role": "user", "content": _USER_TMPL.format(
-                    general=general, address=address, directors=directors, agenda=agenda
-                )},
+                {"role": "user", "content": user_content},
             ],
             "temperature": 0,
             "max_tokens": 8192,
             "response_format": {"type": "json_object"},
-            # Gemini's OpenAI compat layer: turn off thinking for speed (ignored by llama.cpp/OpenRouter).
-            "reasoning_effort": "none",
-        }
-    ).encode()
-
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    req = urllib.request.Request(
-        f"{base_url}/v1/chat/completions",
-        data=payload,
-        headers=headers,
-        method="POST",
-    )
-
-    # Retry transient 429/503 (rate-limit / overload) with exponential backoff.
-    import time
-    body = None
-    last_err: Exception | None = None
-    for attempt in range(3):
+            "reasoning_effort": "none",  # Gemini's OpenAI compat: skip thinking
+        }).encode()
+        req = urllib.request.Request(
+            f"{base_url}/v1/chat/completions",
+            data=payload,
+            headers=headers,
+            method="POST",
+        )
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                body = json.loads(resp.read())
+            body = _call_llm_once(req, label=model)
+            if model != models[0]:
+                print(f"[extractor] fallback succeeded: {model}")
             break
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            if e.code in (429, 503) and attempt < 2:
-                wait = 2 ** attempt  # 1s, 2s
-                print(f"[extractor] LLM HTTP {e.code} (attempt {attempt+1}/3), retrying in {wait}s")
-                time.sleep(wait)
-                last_err = e
-                continue
-            raise RuntimeError(f"HTTP {e.code} from LLM server: {err_body[:300]}")
+        except RuntimeError as e:
+            last_err = e
+            print(f"[extractor] {model} failed: {e}")
+            continue
     if body is None:
-        raise RuntimeError(f"LLM failed after retries: {last_err}")
+        raise RuntimeError(f"All LLM models exhausted: {last_err}")
 
     raw = body["choices"][0]["message"]["content"].strip()
     # Strip Qwen3/thinking-model <think>...</think> blocks
