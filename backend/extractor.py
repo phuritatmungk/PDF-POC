@@ -284,7 +284,8 @@ def _find_address_section(pages) -> str:
         if _BRANCH_LINE.search(t) and not _WATERMARK.match(t):
             branch_lines.append(t)
 
-    return "\n".join(main_lines + branch_lines)[:1500]
+    # Cap at 8000 chars — fits ~100 branch lines (Thai ~80c each).
+    return "\n".join(main_lines + branch_lines)[:8000]
 
 
 def _find_directors_section(pages) -> str:
